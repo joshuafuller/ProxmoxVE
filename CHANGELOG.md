@@ -17,16 +17,28 @@ All LXC instances created using this repository come pre-installed with Midnight
 Do not break established syntax in this file, as it is automatically updated by a Github Workflow
 
 
+## 2025-01-19
+
+### Changed
+
+### 🚀 Updated Scripts
+
+- Update Opengist.sh: Fix broken backup function [@bvdberg01](https://github.com/bvdberg01) ([#1572](https://github.com/community-scripts/ProxmoxVE/pull/1572))
+
 ## 2025-01-18
 
 ### Changed
 
 ### 💥 Breaking Changes
 
+- **READ GUIDE FIRST** breaking change: Homeassistant-Core upgrade os and python3 [@MickLesk](https://github.com/MickLesk) ([#1550](https://github.com/community-scripts/ProxmoxVE/pull/1550))
 - Update Openwrt: Delete lines that do WAN input and forward accept [@chackl1990](https://github.com/chackl1990) ([#1540](https://github.com/community-scripts/ProxmoxVE/pull/1540))
 
 ### 🚀 Updated Scripts
 
+- added cifs support in ubuntu2404-vm.sh [@plonxyz](https://github.com/plonxyz) ([#1461](https://github.com/community-scripts/ProxmoxVE/pull/1461))
+- Fix linkwarden update [@burgerga](https://github.com/burgerga) ([#1565](https://github.com/community-scripts/ProxmoxVE/pull/1565))
+- [jellyseerr] Update nodejs if not up-to-date [@makstech](https://github.com/makstech) ([#1563](https://github.com/community-scripts/ProxmoxVE/pull/1563))
 - Update VM Tags [@oOStroudyOo](https://github.com/oOStroudyOo) ([#1562](https://github.com/community-scripts/ProxmoxVE/pull/1562))
 - Update apt-cacher-ng.sh: Typo/Missing $ [@michelroegl-brunner](https://github.com/michelroegl-brunner) ([#1545](https://github.com/community-scripts/ProxmoxVE/pull/1545))
 
