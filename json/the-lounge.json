@@ -2,7 +2,7 @@
     "name": "The Lounge",
     "slug": "the-lounge",
     "categories": [
-      0
+        22
     ],
     "date_created": "2024-11-28",
     "type": "ct",
@@ -32,7 +32,7 @@
     },
     "notes": [
       {
-        "text": "The Lounge is running in private mode. Use `sudo -u thelounge thelounge add name` to create users.",
+        "text": "The Lounge is running in private mode. Use `runuser -u thelounge -- thelounge add usernamehere` to create users.",
         "type": "info"
       }
     ]

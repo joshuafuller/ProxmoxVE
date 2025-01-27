@@ -28,33 +28,45 @@ function update_script() {
     header_info
     check_container_storage
     check_container_resources
+
     if [[ ! -d /opt/actualbudget ]]; then
         msg_error "No ${APP} Installation Found!"
         exit
     fi
-    if ! command -v jq >/dev/null 2>&1; then
-      echo "Installing jq..."
-      apt-get install -y jq >/dev/null 2>&1
-      echo "Installed jq..."
+    
+    RELEASE=$(curl -s https://api.github.com/repos/actualbudget/actual/releases/latest | grep "tag_name" | awk '{print substr($2, 3, length($2)-4) }')
+    if [[ ! -f /opt/actualbudget_version.txt ]] || [[ "${RELEASE}" != "$(cat /opt/actualbudget_version.txt)" ]]; then
+        msg_info "Stopping ${APP}"
+        systemctl stop actualbudget
+        msg_ok "${APP} Stopped"
+        
+        msg_info "Updating ${APP} to ${RELEASE}"
+        cd /tmp
+        wget -q https://github.com/actualbudget/actual-server/archive/refs/tags/v${RELEASE}.tar.gz
+        mv /opt/actualbudget /opt/actualbudget_bak
+        mkdir -p /opt/actualbudget/
+        tar -xzf v${RELEASE}.tar.gz >/dev/null 2>&1
+        mv *ctual-server-*/* /opt/actualbudget
+        rm -rf /opt/actualbudget/.env
+        mv /opt/actualbudget_bak/.env /opt/actualbudget
+        mv /opt/actualbudget_bak/server-files /opt/actualbudget/server-files
+        cd /opt/actualbudget
+        yarn install &>/dev/null
+        echo "${RELEASE}" >/opt/actualbudget_version.txt
+        msg_ok "Updated ${APP}"
+        
+        msg_info "Starting ${APP}"
+        systemctl start actualbudget
+        msg_ok "Started ${APP}"
+        
+        msg_info "Cleaning Up"
+        rm -rf /opt/actualbudget_bak
+        rm -rf /tmp/actual-server.tar.gz
+        msg_ok "Cleaned"
+        msg_ok "Updated Successfully"
+    else
+        msg_ok "No update required. ${APP} is already at ${RELEASE}"
     fi
-
-    msg_info "Updating ${APP}"
-    systemctl stop actualbudget
-    RELEASE=$(curl -s https://api.github.com/repos/actualbudget/actual-server/tags | jq --raw-output '.[0].name')
-    TEMPD="$(mktemp -d)"
-    cd "${TEMPD}"
-    wget -q https://codeload.github.com/actualbudget/actual-server/legacy.tar.gz/refs/tags/${RELEASE} -O - | tar -xz
-    mv /opt/actualbudget /opt/actualbudget_bak
-    mkdir -p /opt/actualbudget/
-    mv actualbudget-actual-server-*/* /opt/actualbudget/
-    mv /opt/actualbudget_bak/.env /opt/actualbudget
-    mv /opt/actualbudget_bak/server-files /opt/actualbudget/server-files
-    cd /opt/actualbudget
-    yarn install &>/dev/null
-    systemctl start actualbudget
-    msg_ok "Successfully Updated ${APP} to ${RELEASE}"
-    rm -rf "${TEMPD}"
-    rm -rf /opt/actualbudget_bak
     exit
 }
 
