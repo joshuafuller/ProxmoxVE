@@ -29,8 +29,6 @@ function update_script() {
     exit
   fi
 
-  NODE_VERSION="25" setup_nodejs
-
   if check_for_gh_release "sparkyfitness" "CodeWithCJ/SparkyFitness"; then
     msg_info "Stopping Services"
     systemctl stop sparkyfitness-server nginx
@@ -48,6 +46,9 @@ function update_script() {
 
     CLEAN_INSTALL=1 fetch_and_deploy_gh_release "sparkyfitness" "CodeWithCJ/SparkyFitness" "tarball"
 
+    PNPM_VERSION="$(jq -r '.packageManager | split("@")[1]' /opt/sparkyfitness/package.json)"
+    NODE_VERSION="25" NODE_MODULE="pnpm@${PNPM_VERSION}" setup_nodejs
+
     msg_info "Updating Sparky Fitness Backend"
     cd /opt/sparkyfitness/SparkyFitnessServer
     $STD npm install
@@ -55,8 +56,8 @@ function update_script() {
 
     msg_info "Updating Sparky Fitness Frontend (Patience)"
     cd /opt/sparkyfitness/SparkyFitnessFrontend
-    $STD npm install
-    $STD npm run build
+    $STD pnpm install
+    $STD pnpm run build
     cp -a /opt/sparkyfitness/SparkyFitnessFrontend/dist/. /var/www/sparkyfitness/
     msg_ok "Updated Sparky Fitness Frontend"
 
