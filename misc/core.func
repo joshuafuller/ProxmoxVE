@@ -699,15 +699,6 @@ msg_info() {
     return
   fi
 
-  # Non-TTY (e.g. running inside lxc-attach | tee): use static spinner character.
-  # The pipe still forwards \r sequences to the host terminal, so the animated
-  # spinner works visually, but backgrounding it is unreliable in some pipe
-  # scenarios. Use a static indicator that clearly shows "in progress".
-  if [[ ! -t 2 ]]; then
-    printf "\r\e[2K  %b" "${YW}⠋ ${msg}${CL}"
-    return
-  fi
-
   color_spinner
   spinner &
   SPINNER_PID=$!
