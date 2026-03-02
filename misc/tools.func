@@ -2195,7 +2195,12 @@ check_for_gh_release() {
 
   local clean_tags=()
   for t in "${raw_tags[@]}"; do
-    clean_tags+=("${t#v}")
+    # Only strip leading 'v' when followed by a digit (e.g. v1.2.3)
+    if [[ "$t" =~ ^v[0-9] ]]; then
+      clean_tags+=("${t:1}")
+    else
+      clean_tags+=("$t")
+    fi
   done
 
   local latest_raw="${raw_tags[0]}"
@@ -2308,7 +2313,12 @@ check_for_codeberg_release() {
 
   local clean_tags=()
   for t in "${raw_tags[@]}"; do
-    clean_tags+=("${t#v}")
+    # Only strip leading 'v' when followed by a digit (e.g. v1.2.3)
+    if [[ "$t" =~ ^v[0-9] ]]; then
+      clean_tags+=("${t:1}")
+    else
+      clean_tags+=("$t")
+    fi
   done
 
   local latest_raw="${raw_tags[0]}"
@@ -3138,7 +3148,10 @@ function fetch_and_deploy_gh_release() {
   local json tag_name
   json=$(</tmp/gh_rel.json)
   tag_name=$(echo "$json" | jq -r '.tag_name // .name // empty')
-  [[ "$tag_name" =~ ^v ]] && version="${tag_name:1}" || version="$tag_name"
+  # Only strip leading 'v' when followed by a digit (e.g. v1.2.3), not words like "version/..."
+  [[ "$tag_name" =~ ^v[0-9] ]] && version="${tag_name:1}" || version="$tag_name"
+  # Sanitize version for use in filenames (replace / with -)
+  local version_safe="${version//\//-}"
 
   if [[ "$current_version" == "$version" ]]; then
     $STD msg_ok "$app is already up-to-date (v$version)"
@@ -3159,7 +3172,7 @@ function fetch_and_deploy_gh_release() {
     # GitHub API's tarball_url/zipball_url can return HTTP 300 Multiple Choices
     # when a branch and tag share the same name. Use explicit refs/tags/ URL instead.
     local direct_tarball_url="https://github.com/$repo/archive/refs/tags/$tag_name.tar.gz"
-    filename="${app_lc}-${version}.tar.gz"
+    filename="${app_lc}-${version_safe}.tar.gz"
 
     curl $download_timeout -fsSL -o "$tmpdir/$filename" "$direct_tarball_url" || {
       msg_error "Download failed: $direct_tarball_url"
