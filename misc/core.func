@@ -699,6 +699,15 @@ msg_info() {
     return
   fi
 
+  # Non-TTY (e.g. running inside lxc-attach | tee): use static spinner character.
+  # The pipe still forwards \r sequences to the host terminal, so the animated
+  # spinner works visually, but backgrounding it is unreliable in some pipe
+  # scenarios. Use a static indicator that clearly shows "in progress".
+  if [[ ! -t 2 ]]; then
+    printf "\r\e[2K  %b" "${YW}⠋ ${msg}${CL}"
+    return
+  fi
+
   color_spinner
   spinner &
   SPINNER_PID=$!
@@ -932,18 +941,13 @@ is_alpine() {
 #
 # - Determines if script should run in verbose mode
 # - Checks VERBOSE and var_verbose variables
-# - Also returns true if not running in TTY (pipe/redirect scenario)
 # - Used by msg_info() to decide between spinner and static output
+# - Note: Non-TTY (pipe) scenarios are handled separately in msg_info()
+#   to allow spinner output to pass through pipes (e.g. lxc-attach | tee)
 # ------------------------------------------------------------------------------
 is_verbose_mode() {
   local verbose="${VERBOSE:-${var_verbose:-no}}"
-  local tty_status
-  if [[ -t 2 ]]; then
-    tty_status="interactive"
-  else
-    tty_status="not-a-tty"
-  fi
-  [[ "$verbose" != "no" || ! -t 2 ]]
+  [[ "$verbose" != "no" ]]
 }
 
 # ------------------------------------------------------------------------------

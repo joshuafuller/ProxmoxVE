@@ -352,11 +352,11 @@ clear_line() {
 #
 # - Determines if script should run in verbose mode
 # - Checks VERBOSE and var_verbose variables
-# - Also returns true if not running in TTY (pipe/redirect scenario)
+# - Note: Non-TTY (pipe) scenarios are handled separately in msg_info()
 # ------------------------------------------------------------------------------
 is_verbose_mode() {
   local verbose="${VERBOSE:-${var_verbose:-no}}"
-  [[ "$verbose" != "no" || ! -t 2 ]]
+  [[ "$verbose" != "no" ]]
 }
 
 ### dev spinner ###
