@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/build.func)
 # Copyright (c) 2021-2026 tteck
-# Author: tteck (tteckster)
+# Author: tteck (tteckster) | Migration: MickLesk (CanbiZ)
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
 # Source: https://dockge.kuma.pet/
 
@@ -19,26 +19,45 @@ variables
 color
 catch_errors
 
+ADDON_SCRIPT="https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/addon/dockge.sh"
+
 function update_script() {
   header_info
   check_container_storage
   check_container_resources
+
   if [[ ! -d /opt/dockge ]]; then
     msg_error "No ${APP} Installation Found!"
     exit
   fi
 
-  msg_info "Updating base system"
-  $STD apt update
-  $STD apt upgrade -y
-  msg_ok "Base system updated"
+  msg_warn "⚠️  ${APP} has been migrated to an addon script."
+  echo ""
+  msg_info "This is a one-time migration. After this, you can update ${APP} anytime with:"
+  echo -e "${TAB}${TAB}${GN}update_dockge${CL}  or  ${GN}bash <(curl -fsSL ${ADDON_SCRIPT})${CL}"
+  echo ""
+  read -r -p "${TAB}Migrate update function now? [y/N]: " CONFIRM
+  if [[ ! "${CONFIRM,,}" =~ ^(y|yes)$ ]]; then
+    msg_warn "Migration skipped. The old update will continue to work for now."
+    msg_info "Updating ${APP} (legacy)"
+    cd /opt/dockge
+    $STD docker compose pull
+    $STD docker compose up -d
+    msg_ok "Updated ${APP}"
+    exit
+  fi
 
-  msg_info "Updating Dockge"
-  cd /opt/dockge
-  $STD docker compose pull
-  $STD docker compose up -d
-  msg_ok "Updated Dockge"
-  msg_ok "Updated successfully!"
+  msg_info "Migrating update function"
+  cat <<'MIGRATION_EOF' >/usr/bin/update
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/addon/dockge.sh)"
+MIGRATION_EOF
+  chmod +x /usr/bin/update
+
+  ln -sf /usr/bin/update /usr/bin/update_dockge 2>/dev/null || true
+  msg_ok "Migration complete"
+
+  msg_info "Running addon update"
+  type=update bash <(curl -fsSL "${ADDON_SCRIPT}")
   exit
 }
 
