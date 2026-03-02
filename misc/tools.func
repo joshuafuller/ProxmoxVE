@@ -5650,20 +5650,20 @@ function setup_mongodb() {
 #   - Handles Debian Trixie libaio1t64 transition
 #
 # Variables:
-#   USE_MYSQL_REPO - Set to "true" to use official MySQL repository
-#                    (default: false, uses distro packages)
+#   USE_MYSQL_REPO - Use official MySQL repository (default: true)
+#                    Set to "false" to use distro packages instead
 #   MYSQL_VERSION  - MySQL version to install when using official repo
 #                    (e.g. 8.0, 8.4) (default: 8.0)
 #
 # Examples:
-#   setup_mysql                              # Uses distro package (recommended)
-#   USE_MYSQL_REPO=true setup_mysql          # Uses official MySQL repo
-#   USE_MYSQL_REPO=true MYSQL_VERSION="8.4" setup_mysql  # Specific version
+#   setup_mysql                              # Uses official MySQL repo, 8.0
+#   MYSQL_VERSION="8.4" setup_mysql          # Specific version from MySQL repo
+#   USE_MYSQL_REPO=false setup_mysql         # Uses distro package instead
 # ------------------------------------------------------------------------------
 
 function setup_mysql() {
   local MYSQL_VERSION="${MYSQL_VERSION:-8.0}"
-  local USE_MYSQL_REPO="${USE_MYSQL_REPO:-false}"
+  local USE_MYSQL_REPO="${USE_MYSQL_REPO:-true}"
   local DISTRO_ID DISTRO_CODENAME
   DISTRO_ID=$(awk -F= '/^ID=/{print $2}' /etc/os-release | tr -d '"')
   DISTRO_CODENAME=$(awk -F= '/^VERSION_CODENAME=/{print $2}' /etc/os-release)
@@ -6364,15 +6364,15 @@ EOF
 #   - Restores dumped data post-upgrade
 #
 # Variables:
-#   USE_PGDG_REPO  - Set to "true" to use official PGDG repository
-#                    (default: false, uses distro packages)
+#   USE_PGDG_REPO  - Use official PGDG repository (default: true)
+#                    Set to "false" to use distro packages instead
 #   PG_VERSION    - Major PostgreSQL version (e.g. 15, 16) (default: 16)
 #   PG_MODULES    - Comma-separated list of modules (e.g. "postgis,contrib")
 #
 # Examples:
-#   setup_postgresql                              # Uses distro package (recommended)
-#   USE_PGDG_REPO=true setup_postgresql           # Uses official PGDG repo
-#   USE_PGDG_REPO=true PG_VERSION="17" setup_postgresql  # Specific version from PGDG
+#   setup_postgresql                              # Uses PGDG repo, PG 16
+#   PG_VERSION="17" setup_postgresql               # Specific version from PGDG
+#   USE_PGDG_REPO=false setup_postgresql           # Uses distro package instead
 # ------------------------------------------------------------------------------
 
 function setup_postgresql() {
