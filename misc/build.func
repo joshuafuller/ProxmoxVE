@@ -4391,12 +4391,16 @@ EOF'
     echo ""
     echo -en "${YW}Select option [1-${max_option}] (default: 1, auto-remove in 60s): ${CL}"
 
-    # Ensure terminal is sane before reading input (lxc-attach|tee may corrupt tty state)
+    # Restore terminal state after lxc-attach|tee pipeline
     stty sane 2>/dev/null || true
+    # Drain stale input from terminal buffer (lxc-attach|tee leaves residual data
+    # that causes read to return immediately with empty input)
+    dd iflag=nonblock if=/dev/tty of=/dev/null 2>/dev/null || true
+    sleep 0.3
 
-    # Read directly from /dev/tty (fresh open = clean state, no inherited corruption)
+    # Read user choice
     local response=""
-    if read -t 60 -r response </dev/tty 2>/dev/null; then
+    if read -t 60 -r response </dev/tty; then
       case "${response:-1}" in
       1)
         # Remove container

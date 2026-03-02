@@ -934,7 +934,11 @@ upgrade_package() {
 # ------------------------------------------------------------------------------
 # Repository availability check with caching
 # ------------------------------------------------------------------------------
-declare -A _REPO_CACHE 2>/dev/null || true
+# Note: Must use -gA (global) because tools.func is sourced inside update_os()
+# function scope. Plain 'declare -A' would create a local variable that gets
+# destroyed when update_os() returns, causing "unbound variable" errors later
+# when setup_postgresql/verify_repo_available tries to access the cache key.
+declare -gA _REPO_CACHE 2>/dev/null || declare -A _REPO_CACHE 2>/dev/null || true
 
 verify_repo_available() {
   local repo_url="$1"
