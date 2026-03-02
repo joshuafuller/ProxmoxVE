@@ -4100,9 +4100,15 @@ EOF'
     #   - install script crashes before logging starts
     #   - $STD/silent() not used for some commands
     # PIPESTATUS[0] gets the real exit code from lxc-attach (not from tee).
+    # Note: stdin is redirected from /dev/null so the pipeline does not consume
+    # the host's stdin/tty. This keeps /dev/tty usable for the recovery menu
+    # after SIGINT or failure (prevents "read: read error: Input/output error").
     local _LXC_CAPTURE_LOG="/tmp/.install-capture-${SESSION_ID}.log"
-    lxc-attach -n "$CTID" -- bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/install/${var_install}.sh)" 2>&1 | tee "$_LXC_CAPTURE_LOG"
+    lxc-attach -n "$CTID" -- bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/install/${var_install}.sh)" </dev/null 2>&1 | tee "$_LXC_CAPTURE_LOG"
     local lxc_exit=${PIPESTATUS[0]}
+
+    # Restore terminal state after pipeline (tee/lxc-attach may leave it broken)
+    stty sane 2>/dev/null || true
 
     unset CONTAINER_INSTALLING
 
@@ -4387,6 +4393,9 @@ EOF'
     echo ""
     echo -en "${YW}Select option [1-${max_option}] (default: 1, auto-remove in 60s): ${CL}"
 
+    # Ensure terminal is sane before reading input (lxc-attach|tee may corrupt tty state)
+    stty sane 2>/dev/null || true
+
     if read -t 60 -r response </dev/tty; then
       case "${response:-1}" in
       1)
@@ -4475,8 +4484,9 @@ EOF'
           set +Eeuo pipefail
           trap - ERR
           local _LXC_CAPTURE_LOG="/tmp/.install-capture-${SESSION_ID}.log"
-          lxc-attach -n "$CTID" -- bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/install/${var_install}.sh)" 2>&1 | tee "$_LXC_CAPTURE_LOG"
+          lxc-attach -n "$CTID" -- bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/install/${var_install}.sh)" </dev/null 2>&1 | tee "$_LXC_CAPTURE_LOG"
           local apt_retry_exit=${PIPESTATUS[0]}
+          stty sane 2>/dev/null || true
           set -Eeuo pipefail
           trap 'error_handler' ERR
 
