@@ -286,12 +286,9 @@ error_handler() {
         echo -en "${YW}Remove broken container ${CTID}? (Y/n) [auto-remove in 60s]: ${CL}"
       fi
 
-      # Reset terminal state and flush stale input from buffer
-      stty sane 2>/dev/null || true
-      dd iflag=nonblock if=/dev/tty of=/dev/null 2>/dev/null || true
-      sleep 0.3
+      # Read user response
       local response=""
-      if read -t 60 -r response </dev/tty; then
+      if read -t 60 -r response; then
         if [[ -z "$response" || "$response" =~ ^[Yy]$ ]]; then
           echo ""
           if declare -f msg_info >/dev/null 2>&1; then
