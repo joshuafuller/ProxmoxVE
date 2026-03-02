@@ -286,7 +286,15 @@ error_handler() {
         echo -en "${YW}Remove broken container ${CTID}? (Y/n) [auto-remove in 60s]: ${CL}"
       fi
 
-      if read -t 60 -r response </dev/tty; then
+      # Use the pre-opened tty fd if available (survives tty corruption from lxc-attach|tee)
+      stty sane 2>/dev/null || true
+      local _read_fd="${_RECOVERY_TTY:-}"
+      local _read_src="</dev/tty"
+      if [[ -n "$_read_fd" ]] && { true <&"$_read_fd"; } 2>/dev/null; then
+        _read_src="<&$_read_fd"
+      fi
+
+      if eval "read -t 60 -r response $_read_src"; then
         if [[ -z "$response" || "$response" =~ ^[Yy]$ ]]; then
           echo ""
           if declare -f msg_info >/dev/null 2>&1; then
