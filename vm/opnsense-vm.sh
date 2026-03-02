@@ -210,7 +210,7 @@ pve_check() {
     if ((MINOR < 0 || MINOR > 9)); then
       msg_error "This version of Proxmox VE is not supported."
       msg_error "Supported: Proxmox VE version 8.0 – 8.9"
-      exit 1
+      exit 105
     fi
     return 0
   fi
@@ -221,7 +221,7 @@ pve_check() {
     if ((MINOR < 0 || MINOR > 1)); then
       msg_error "This version of Proxmox VE is not supported."
       msg_error "Supported: Proxmox VE version 9.0 – 9.1"
-      exit 1
+      exit 105
     fi
     return 0
   fi
@@ -229,7 +229,7 @@ pve_check() {
   # All other unsupported versions
   msg_error "This version of Proxmox VE is not supported."
   msg_error "Supported versions: Proxmox VE 8.0 – 8.x or 9.0 – 9.1"
-  exit 1
+  exit 105
 }
 
 function arch_check() {
@@ -616,7 +616,7 @@ for ver in $RELEASE_LIST; do
 done
 if [ -z "$URL" ]; then
   msg_error "Could not find generic FreeBSD amd64 qcow2 image (non-UFS/ZFS)."
-  exit 1
+  exit 115
 fi
 msg_ok "Download URL: ${CL}${BL}${URL}${CL}"
 
@@ -626,7 +626,7 @@ if ! check_disk_space "$TEMP_DIR" 20; then
   msg_error "Insufficient disk space in temporary directory ($TEMP_DIR)."
   msg_error "Available: ${AVAILABLE_GB}, Required: ~20GB for FreeBSD image decompression."
   msg_error "Please free up space or ensure /tmp has sufficient storage."
-  exit 1
+  exit 214
 fi
 
 msg_info "Downloading FreeBSD Image"
@@ -639,7 +639,7 @@ if ! check_disk_space "$TEMP_DIR" 15; then
   AVAILABLE_GB=$(df -h "$TEMP_DIR" | awk 'NR==2 {print $4}')
   msg_error "Insufficient disk space for decompression."
   msg_error "Available: ${AVAILABLE_GB}, Required: ~15GB for decompressed image."
-  exit 1
+  exit 214
 fi
 
 msg_info "Decompressing FreeBSD Image (this may take a few minutes)"
@@ -648,7 +648,7 @@ if ! unxz -cv $(basename $URL) >${FILE}; then
   msg_error "Failed to decompress FreeBSD image."
   msg_error "This is usually caused by insufficient disk space."
   df -h "$TEMP_DIR"
-  exit 1
+  exit 115
 fi
 
 # Remove the compressed file to save space

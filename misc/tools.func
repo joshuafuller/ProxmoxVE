@@ -5153,7 +5153,7 @@ current_ip="$(get_current_ip)"
 
 if [[ -z "$current_ip" ]]; then
     echo "[ERROR] Could not detect local IP" >&2
-    exit 1
+    exit 123
 fi
 
 if [[ -f "$IP_FILE" ]]; then

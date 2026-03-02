@@ -192,7 +192,7 @@ function pve_check() {
     if ((MINOR < 0 || MINOR > 9)); then
       msg_error "This version of Proxmox VE is not supported."
       msg_error "Supported: Proxmox VE version 8.0 – 8.9"
-      exit 1
+      exit 105
     fi
     return 0
   fi
@@ -202,14 +202,14 @@ function pve_check() {
     if ((MINOR < 0 || MINOR > 1)); then
       msg_error "This version of Proxmox VE is not yet supported."
       msg_error "Supported: Proxmox VE version 9.0 – 9.1"
-      exit 1
+      exit 105
     fi
     return 0
   fi
 
   msg_error "This version of Proxmox VE is not supported."
   msg_error "Supported versions: Proxmox VE 8.0 – 8.x or 9.0 – 9.1"
-  exit 1
+  exit 105
 }
 
 function arch_check() {
@@ -305,7 +305,7 @@ function advanced_settings() {
 
   if [ $ISO_COUNT -eq 0 ]; then
     echo "No ISOs found."
-    exit 1
+    exit 115
   fi
 
   # Identify the index of the last stable release
@@ -529,7 +529,7 @@ if [ -z "${SELECTED_ISO:-}" ]; then
 
   if [ -z "$SELECTED_ISO" ]; then
     msg_error "Could not find a stable ISO for fallback."
-    exit 1
+    exit 115
   fi
 fi
 
