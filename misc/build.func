@@ -4101,10 +4101,7 @@ EOF'
     #   - $STD/silent() not used for some commands
     # PIPESTATUS[0] gets the real exit code from lxc-attach (not from tee).
     # stdin comes from /dev/tty so install scripts can use interactive `read`.
-    # We pre-open a separate fd to /dev/tty BEFORE the pipeline so the recovery
-    # menu can still read even if lxc-attach|tee corrupts the tty state.
     local _LXC_CAPTURE_LOG="/tmp/.install-capture-${SESSION_ID}.log"
-    exec {_RECOVERY_TTY}</dev/tty 2>/dev/null || _RECOVERY_TTY=""
     lxc-attach -n "$CTID" -- bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/install/${var_install}.sh)" </dev/tty 2>&1 | tee "$_LXC_CAPTURE_LOG"
     local lxc_exit=${PIPESTATUS[0]}
 
@@ -4397,14 +4394,9 @@ EOF'
     # Ensure terminal is sane before reading input (lxc-attach|tee may corrupt tty state)
     stty sane 2>/dev/null || true
 
-    # Use the pre-opened tty fd (survives tty corruption from lxc-attach|tee)
-    local _read_fd="${_RECOVERY_TTY:-}"
-    local _read_src="</dev/tty"
-    if [[ -n "$_read_fd" ]] && { true <&"$_read_fd"; } 2>/dev/null; then
-      _read_src="<&$_read_fd"
-    fi
-
-    if eval "read -t 60 -r response $_read_src"; then
+    # Read directly from /dev/tty (fresh open = clean state, no inherited corruption)
+    local response=""
+    if read -t 60 -r response </dev/tty 2>/dev/null; then
       case "${response:-1}" in
       1)
         # Remove container
@@ -4601,8 +4593,6 @@ EOF'
 
     # Restore default job-control signal handling before exit
     trap - TSTP TTIN TTOU
-    # Close pre-opened tty fd
-    [[ -n "${_RECOVERY_TTY:-}" ]] && exec {_RECOVERY_TTY}<&- 2>/dev/null || true
     exit $install_exit_code
   fi
 
