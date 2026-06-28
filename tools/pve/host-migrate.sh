@@ -14,6 +14,12 @@ BACKTITLE="Proxmox VE Helper Scripts - Host Migrate"
 BUNDLE_PREFIX="pve-migrate"
 NFS_MOUNTPOINT=""
 NFS_MOUNTED=0
+# Mountpoints this script created on demand and should clean up on exit
+# (only those the user did NOT choose to make persistent via fstab).
+TEMP_MOUNTS=()
+# Result holders for the storage picker / disk preparation helpers.
+BROWSE_RESULT=""
+PREPARED_MP=""
 
 function header_info {
   clear
@@ -46,13 +52,126 @@ fi
 # Helpers
 # ----------------------------------------------------------------------------
 
-# Cleanup handler: unmount NFS if we mounted it ourselves.
+# Cleanup handler: unmount things we mounted on demand (NFS + non-persistent
+# disk mounts). Disk DATA is never touched here, we only unmount.
 function cleanup {
   if [ "$NFS_MOUNTED" -eq 1 ] && mountpoint -q "$NFS_MOUNTPOINT"; then
     umount "$NFS_MOUNTPOINT" 2>/dev/null && rmdir "$NFS_MOUNTPOINT" 2>/dev/null
   fi
+  local mp
+  for mp in "${TEMP_MOUNTS[@]}"; do
+    if mountpoint -q "$mp"; then
+      umount "$mp" 2>/dev/null && rmdir "$mp" 2>/dev/null
+    fi
+  done
 }
 trap cleanup EXIT
+
+# Convert a size string like "37.9G" / "931.51g" to a human label as-is.
+# Echo a fresh, unique mountpoint path under /mnt for a given label.
+function _new_mountpoint {
+  local base="/mnt/${1}"
+  local mp="$base"
+  local n=1
+  while [ -e "$mp" ] && ! { [ -d "$mp" ] && [ -z "$(ls -A "$mp" 2>/dev/null)" ]; }; do
+    mp="${base}-${n}"
+    n=$((n + 1))
+  done
+  echo "$mp"
+}
+
+# Offer to persist a mount in /etc/fstab. $1=device(or UUID source) $2=mountpoint $3=fstype
+function _offer_fstab {
+  local dev="$1" mp="$2" fstype="$3"
+  local uuid
+  uuid=$(blkid -s UUID -o value "$dev" 2>/dev/null)
+  if whiptail --backtitle "$BACKTITLE" --yesno \
+    "Make this mount permanent (survives reboot) by adding it to /etc/fstab?\n\n${dev} -> ${mp}" 11 72; then
+    if [ -n "$uuid" ]; then
+      echo "UUID=${uuid} ${mp} ${fstype} defaults 0 2" >>/etc/fstab
+    else
+      echo "${dev} ${mp} ${fstype} defaults 0 2" >>/etc/fstab
+    fi
+    msg_ok "Added to /etc/fstab"
+    return 0
+  fi
+  return 1
+}
+
+# Mount an existing filesystem on a device. Sets PREPARED_MP on success.
+function mount_existing_fs {
+  local dev="$1" fstype="$2"
+  local mp
+  PREPARED_MP=""
+  mp=$(_new_mountpoint "$(basename "$dev")")
+  mkdir -p "$mp"
+  msg_info "Mounting ${dev}"
+  if mount "$dev" "$mp" 2>/tmp/host-migrate-mount.log; then
+    msg_ok "Mounted ${dev} at ${mp}"
+    if _offer_fstab "$dev" "$mp" "${fstype:-auto}"; then :; else TEMP_MOUNTS+=("$mp"); fi
+    PREPARED_MP="$mp"
+    return 0
+  fi
+  msg_error "Could not mount ${dev} (see /tmp/host-migrate-mount.log)"
+  rmdir "$mp" 2>/dev/null
+  return 1
+}
+
+# Format a raw/empty device with ext4 and mount it. DESTRUCTIVE.
+function format_and_mount {
+  local dev="$1"
+  local confirm
+  confirm=$(whiptail --backtitle "$BACKTITLE" --title "!! DESTRUCTIVE - FORMAT !!" --inputbox \
+    "\nThis will ERASE ALL DATA on:\n  ${dev}\n\nand create a fresh ext4 filesystem.\n\nType exactly  FORMAT  to proceed:" 14 72 \
+    3>&1 1>&2 2>&3) || return 1
+  [ "$confirm" != "FORMAT" ] && {
+    msg_warn "Confirmation mismatch - nothing changed"
+    sleep 2
+    return 1
+  }
+  msg_info "Creating ext4 on ${dev}"
+  if ! mkfs.ext4 -F "$dev" &>/tmp/host-migrate-mkfs.log; then
+    msg_error "mkfs.ext4 failed (see /tmp/host-migrate-mkfs.log)"
+    return 1
+  fi
+  msg_ok "Formatted ${dev}"
+  mount_existing_fs "$dev" "ext4"
+}
+
+# Create a logical volume in a VG with free space, format ext4 and mount it.
+function create_lv_and_mount {
+  local vg="$1" vgfree="$2"
+  local lvname size
+  lvname=$(whiptail --backtitle "$BACKTITLE" --inputbox \
+    "\nName for the new logical volume in VG '${vg}':" 10 64 \
+    "backup" --title "New LV name" 3>&1 1>&2 2>&3) || return 1
+  lvname="${lvname:-backup}"
+  size=$(whiptail --backtitle "$BACKTITLE" --inputbox \
+    "\nSize for /dev/${vg}/${lvname}\n(${vgfree} free).\nUse e.g. 500G, or leave empty for ALL free space:" 12 68 \
+    --title "LV size" 3>&1 1>&2 2>&3) || return 1
+
+  msg_info "Creating LV ${lvname} in ${vg}"
+  if [ -z "$size" ]; then
+    lvcreate -l 100%FREE -n "$lvname" "$vg" &>/tmp/host-migrate-lv.log || {
+      msg_error "lvcreate failed (see /tmp/host-migrate-lv.log)"
+      return 1
+    }
+  else
+    lvcreate -L "$size" -n "$lvname" "$vg" &>/tmp/host-migrate-lv.log || {
+      msg_error "lvcreate failed (see /tmp/host-migrate-lv.log)"
+      return 1
+    }
+  fi
+  msg_ok "Created /dev/${vg}/${lvname}"
+  local dev="/dev/${vg}/${lvname}"
+  msg_info "Creating ext4 on ${dev}"
+  mkfs.ext4 -F "$dev" &>/tmp/host-migrate-mkfs.log || {
+    msg_error "mkfs.ext4 failed (see /tmp/host-migrate-mkfs.log)"
+    return 1
+  }
+  msg_ok "Formatted ${dev}"
+  mount_existing_fs "$dev" "ext4"
+}
 
 # Show currently mounted filesystems (real storage only) and let the user pick
 # one. Echoes the chosen mountpoint on stdout. Returns non-zero on cancel.
@@ -98,14 +217,74 @@ function browse_mounts {
     done < <(pvesm status 2>/dev/null | awk 'NR>1 && $3=="active" && $2=="dir" {printf "%s\t%.1fG\n", $1, $6/1048576}')
   fi
 
+  # --- Unmounted block devices: offer mount / format -----------------------
+  # Columns: NAME TYPE FSTYPE MOUNTPOINT SIZE TRAN
+  local name dtype dfs dmnt dsize dtran dev
+  while read -r name dtype dfs dmnt dsize dtran; do
+    [ -z "$name" ] && continue
+    [[ "$name" =~ ^(loop|zram|sr|fd) ]] && continue
+    [ -n "$dmnt" ] && continue                       # already mounted
+    [ "$dtype" = "disk" ] || [ "$dtype" = "part" ] || continue
+    dev="/dev/${name}"
+    # skip if device or any child is mounted (system disks)
+    if lsblk -rno MOUNTPOINT "$dev" 2>/dev/null | grep -q .; then continue; fi
+    case "$dfs" in
+    LVM2_member | swap | crypto_LUKS) continue ;;     # handled via VG / not a target
+    "")
+      # Only offer to format reasonably sized devices (GiB/TiB), skip tiny ones.
+      [[ "$dsize" =~ [GT]$ ]] || continue
+      menu+=("FORMAT:${dev}" "[format] empty ${dtype} ${name} (${dsize}, ${dtran:-?}) - ERASES DATA")
+      ;;
+    ext2 | ext3 | ext4 | xfs | btrfs | vfat | exfat | ntfs)
+      menu+=("MOUNT:${dev}" "[mount] ${dfs} on ${name} (${dsize}, ${dtran:-?})")
+      ;;
+    esac
+  done < <(lsblk -rno NAME,TYPE,FSTYPE,MOUNTPOINT,SIZE,TRAN 2>/dev/null)
+
+  # --- Volume groups with free space: offer to create an LV ----------------
+  if command -v vgs >/dev/null 2>&1; then
+    local vg vgfree
+    while read -r vg vgfree; do
+      [ -z "$vg" ] && continue
+      # only offer if there is meaningful free space (> 1 GiB)
+      awk -v f="$vgfree" 'BEGIN{exit !(f+0 > 1)}' || continue
+      menu+=("LV:${vg}" "[lvm] create volume in VG '${vg}' (${vgfree}G free)")
+    done < <(vgs --noheadings --nosuffix --units g -o vg_name,vg_free 2>/dev/null | awk '{print $1, $2}')
+  fi
+
   if [ "${#menu[@]}" -eq 0 ]; then
-    msg_error "No usable mounts found. Mount an SSD/USB/NFS first or use the NFS option."
+    msg_error "No usable target found. Attach an SSD/USB/NFS first or use the NFS option."
     sleep 3
     return 1
   fi
 
-  whiptail --backtitle "$BACKTITLE" --title "Mounted Filesystems / Storages" --menu \
-    "\nSelect a target location (free space shown):" 22 110 12 "${menu[@]}" 3>&1 1>&2 2>&3
+  local picked
+  picked=$(whiptail --backtitle "$BACKTITLE" --title "Select / Prepare Target Storage" --menu \
+    "\nPick a ready location, or prepare a disk/LVM ([mount]/[format]/[lvm]):" 24 112 14 "${menu[@]}" 3>&1 1>&2 2>&3) || return 1
+
+  BROWSE_RESULT=""
+  case "$picked" in
+  MOUNT:*)
+    dev="${picked#MOUNT:}"
+    mount_existing_fs "$dev" "$(lsblk -rno FSTYPE "$dev" 2>/dev/null | head -n1)" || return 1
+    BROWSE_RESULT="$PREPARED_MP"
+    ;;
+  FORMAT:*)
+    format_and_mount "${picked#FORMAT:}" || return 1
+    BROWSE_RESULT="$PREPARED_MP"
+    ;;
+  LV:*)
+    vg="${picked#LV:}"
+    vgfree=$(vgs --noheadings --nosuffix --units g -o vg_free "$vg" 2>/dev/null | awk '{print $1}')
+    create_lv_and_mount "$vg" "$vgfree" || return 1
+    BROWSE_RESULT="$PREPARED_MP"
+    ;;
+  *)
+    BROWSE_RESULT="$picked"
+    ;;
+  esac
+  [ -n "$BROWSE_RESULT" ] || return 1
+  return 0
 }
 
 # Ask the user whether the destination/source is a local path or an NFS share.
@@ -117,14 +296,15 @@ function choose_location {
 
   choice=$(whiptail --backtitle "$BACKTITLE" --title "$prompt_title" --menu \
     "\nWhere is the migration bundle located?" 16 74 4 \
-    "browse" "Pick from currently mounted filesystems" \
+    "browse" "Pick / prepare storage (mounts, disks, LVM)" \
     "local" "Type a local path manually (SSD, USB, mount)" \
     "nfs" "NFS share (mount on demand)" \
     3>&1 1>&2 2>&3) || return 1
 
   if [ "$choice" = "browse" ]; then
     local picked sub
-    picked=$(browse_mounts) || return 1
+    browse_mounts || return 1
+    picked="$BROWSE_RESULT"
     [ -z "$picked" ] && return 1
     sub=$(whiptail --backtitle "$BACKTITLE" --inputbox \
       "\nOptional subfolder under:\n${picked}\n\nLeave empty to use it directly." 12 70 \
@@ -219,6 +399,22 @@ function collect_guests {
 # ----------------------------------------------------------------------------
 function do_export {
   choose_location "Export Destination" "/mnt/" || return
+
+  # Free-space awareness: show target capacity and warn when it's tight.
+  local avail_h avail_g
+  avail_h=$(df -h --output=avail "$BASE_DIR" 2>/dev/null | tail -n1 | tr -d ' ')
+  avail_g=$(df -BG --output=avail "$BASE_DIR" 2>/dev/null | tail -n1 | tr -dc '0-9')
+  if [ -n "$avail_g" ]; then
+    if [ "$avail_g" -lt 10 ]; then
+      if ! whiptail --backtitle "$BACKTITLE" --title "Low Disk Space" --yesno \
+        "Target '${BASE_DIR}' has only ${avail_h:-?} free.\n\nA full export with vzdump can easily exceed this.\nConsider a larger disk/LVM target.\n\nContinue anyway?" 13 74; then
+        return
+      fi
+    else
+      whiptail --backtitle "$BACKTITLE" --title "Target Space" --msgbox \
+        "Target: ${BASE_DIR}\nFree space: ${avail_h:-?}" 9 70
+    fi
+  fi
 
   local bundle="${BASE_DIR%/}/${BUNDLE_PREFIX}-$(hostname)-$(date +%Y_%m_%dT%H_%M)"
   mkdir -p "$bundle/host" "$bundle/guests" || {
@@ -327,9 +523,13 @@ function do_export {
           if [ "$guest_method" = "vzdump" ]; then
             msg_info "vzdump ${type} ${id} (${name})"
             if vzdump "$id" --dumpdir "$bundle/guests" --mode "$guest_mode" --compress zstd &>>"$bundle/guests/vzdump.log"; then
-              local file
-              file=$(ls -1t "$bundle/guests"/vzdump-*-"${id}"-*.* 2>/dev/null | grep -v '\.log$' | head -n1)
-              file="$(basename "$file")"
+              local file newest=""
+              for file in "$bundle/guests"/vzdump-*-"${id}"-*; do
+                [ -f "$file" ] || continue
+                case "$file" in *.log) continue ;; esac
+                [ -z "$newest" ] || [ "$file" -nt "$newest" ] && newest="$file"
+              done
+              file="$(basename "$newest")"
               echo -e "${type}\t${id}\t${name}\tvzdump\t${file}" >>"$bundle/guests.tsv"
               msg_ok "vzdump ${type} ${id} -> ${file}"
             else
@@ -545,7 +745,7 @@ function import_hostcfg {
 
   if [[ "$sel" == *storage* ]]; then
     if [ -f "$bundle/host/etc-pve/storage.cfg" ]; then
-      cp /etc/pve/storage.cfg /etc/pve/storage.cfg.bak.$(date +%s) 2>/dev/null
+      cp /etc/pve/storage.cfg "/etc/pve/storage.cfg.bak.$(date +%s)" 2>/dev/null
       cp "$bundle/host/etc-pve/storage.cfg" /etc/pve/storage.cfg
       msg_ok "Restored storage.cfg (review with: pvesm status)"
     else
@@ -570,7 +770,7 @@ function import_hostcfg {
   fi
 
   if [[ "$sel" == *hosts* ]]; then
-    [ -f "$bundle/host/hosts" ] && cp /etc/hosts /etc/hosts.bak.$(date +%s) && cp "$bundle/host/hosts" /etc/hosts && msg_ok "Restored /etc/hosts"
+    [ -f "$bundle/host/hosts" ] && cp /etc/hosts "/etc/hosts.bak.$(date +%s)" && cp "$bundle/host/hosts" /etc/hosts && msg_ok "Restored /etc/hosts"
   fi
 
   if [[ "$sel" == *network* ]]; then
