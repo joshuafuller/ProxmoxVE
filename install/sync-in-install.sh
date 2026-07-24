@@ -51,7 +51,14 @@ msg_ok "Ran Database Migrations"
 
 msg_info "Creating Admin User"
 cd /opt/sync-in
-$STD npx sync-in-server create-user
+ADMIN_PASS=$(openssl rand -base64 18)
+$STD npx sync-in-server create-user --role admin --login admin --password "${ADMIN_PASS}"
+cat <<EOF >~/sync-in.creds
+Sync-in Credentials
+====================
+Login: admin
+Password: ${ADMIN_PASS}
+EOF
 msg_ok "Created Admin User"
 
 VERSION=$(node -pe "require('/opt/sync-in/node_modules/@sync-in/server/package.json').version" 2>/dev/null || echo "")
